@@ -48,6 +48,22 @@ jobs:
           npx --yes wait-on@8 http://localhost:4173 --timeout 30000
           node scripts/screenshots.mjs
 
+      - name: Check GitHub Pages sub-path build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+        run: |
+          npm run build > /dev/null
+          echo "--- dist/index.html"
+          cat dist/index.html
+          grep -q "src=\"${BASE_PATH}assets/" dist/index.html
+          grep -q "href=\"${BASE_PATH}manifest.json\"" dist/index.html
+          grep -q "href=\"${BASE_PATH}favicon.svg\"" dist/index.html
+          test -f dist/sw.js && test -f dist/icons/icon-192.png
+          echo "sub-path build OK"
+          npx vite preview --port 4174 --strictPort &
+          npx --yes wait-on@8 http://localhost:4174${BASE_PATH}
+          BASE_URL="http://localhost:4174${BASE_PATH}" OUT_DIR=shots/pages node scripts/screenshots.mjs
+
       - name: Upload screenshots artifact
         uses: actions/upload-artifact@v4
         with:

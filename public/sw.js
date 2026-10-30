@@ -5,8 +5,13 @@
 // - 그 밖의 파일(아이콘 등): 보관본을 먼저 보여 주고 뒤에서 새로 받아 둠
 // 학생 데이터는 LocalStorage 에 있으며 서비스 워커와 관계없습니다.
 
-const CACHE = 'tutor-report-v2'
-const SHELL = ['/', '/index.html', '/manifest.json', '/favicon.svg', '/icons/icon-192.png', '/icons/icon-512.png']
+const CACHE = 'tutor-report-v3'
+// 앱이 올라간 경로. Vercel 은 '/', GitHub Pages 는 '/mobile-tutor-report/'.
+const BASE = new URL(self.registration.scope).pathname
+const INDEX = `${BASE}index.html`
+const SHELL = ['', 'index.html', 'manifest.json', 'favicon.svg', 'icons/icon-192.png', 'icons/icon-512.png'].map(
+  (p) => BASE + p,
+)
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -41,15 +46,15 @@ self.addEventListener('fetch', (event) => {
       fetch(req)
         .then((res) => {
           const copy = res.clone()
-          caches.open(CACHE).then((c) => c.put('/index.html', copy))
+          caches.open(CACHE).then((c) => c.put(INDEX, copy))
           return res
         })
-        .catch(() => caches.match('/index.html').then((r) => r || caches.match('/'))),
+        .catch(() => caches.match(INDEX).then((r) => r || caches.match(BASE))),
     )
     return
   }
 
-  if (url.pathname.startsWith('/assets/')) {
+  if (url.pathname.startsWith(`${BASE}assets/`)) {
     event.respondWith(
       caches.match(req).then(
         (hit) =>

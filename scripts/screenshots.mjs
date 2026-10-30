@@ -20,7 +20,7 @@ const ctx = await browser.newContext({
   locale: 'ko-KR',
   timezoneId: 'Asia/Seoul',
 })
-await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE })
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(BASE).origin })
 const page = await ctx.newPage()
 page.on('dialog', (d) => d.accept())
 page.on('pageerror', (e) => console.error('[pageerror]', e.message))
@@ -170,4 +170,5 @@ await browser.close()
 
 if (failures.length > 0) {
   console.error(`실패한 단계: ${failures.join(', ')}`)
+  process.exitCode = 1
 }

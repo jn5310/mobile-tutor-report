@@ -47,6 +47,20 @@ Vercel은 저장소의 "기본 브랜치"에 올라온 코드를 실제 주소�
 
 ---
 
+## (다른 방법) GitHub Pages로 바로 쓰기
+
+Vercel 가입 없이 GitHub만으로도 앱 주소를 만들 수 있습니다. 저장소가 Public이면 무료입니다.
+
+1. 저장소 → **Settings** → 왼쪽 **Pages** 를 누릅니다.
+2. **Build and deployment** 의 **Source** 를 **GitHub Actions** 로 바꿉니다. (한 번만 하면 됩니다.)
+3. 위쪽 **Actions** 탭 → 왼쪽 **Deploy to GitHub Pages** → 오른쪽 **Run workflow** → 초록 **Run workflow** 를 누릅니다.
+4. 1~2분 뒤 초록 체크가 뜨면 `https://계정이름.github.io/mobile-tutor-report/` 주소로 앱이 열립니다.
+5. 그다음부터는 PR을 Merge할 때마다 자동으로 다시 배포됩니다.
+
+이 방법을 쓰면 2~4단계(Vercel)는 건너뛰고 5단계(폰에 설치)로 가면 됩니다.
+
+---
+
 ## 2단계. Vercel 가입하고 GitHub 연결하기
 
 Vercel은 내 코드를 인터넷 주소로 만들어 주는 무료 서비스입니다.
