@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: #f1f5f9;
+    color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+      'Pretendard', 'Malgun Gothic', 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /* 모바일 퍼스트 컨테이너: 화면 가운데 정렬된 최대 폭 컨테이너 */
+  .app-shell {
+    @apply mx-auto min-h-screen w-full max-w-md bg-white;
+  }
+}
