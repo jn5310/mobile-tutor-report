@@ -1,0 +1,72 @@
+name: Build & UI preview
+
+# 브랜치에 push 하거나 PR 을 열면
+# 1) npm install + npm run build 로 타입/빌드 오류가 없는지 검사하고
+# 2) 아이폰 크기 브라우저로 주요 화면을 찍어 ui-shots 브랜치에 올립니다.
+on:
+  push:
+    branches-ignore:
+      - main
+      - ui-shots
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ui-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Type check & build
+        run: npm run build 2>&1 | tee build.log
+
+      - name: Install browser and Korean fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk fonts-noto-color-emoji > /dev/null
+          npm install --no-save --no-audit --no-fund playwright@1.48.2
+          npx playwright install --with-deps chromium
+
+      - name: Take screenshots
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          npx --yes wait-on@8 http://localhost:4173 --timeout 30000
+          node scripts/screenshots.mjs
+
+      - name: Upload screenshots artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: shots/
+
+      - name: Publish screenshots to ui-shots branch
+        if: github.event_name != 'pull_request'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SOURCE_REF: ${{ github.ref_name }}
+        run: |
+          cp build.log package-lock.json shots/
+          cd shots
+          echo "source: ${SOURCE_REF} @ ${GITHUB_SHA}" > SOURCE.txt
+          git init -q
+          git checkout -q -b ui-shots
+          git add -A
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit -qm "UI screenshots for ${SOURCE_REF} @ ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${REPO}.git" ui-shots
