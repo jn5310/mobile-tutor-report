@@ -55,9 +55,13 @@ async function tapTimes(name, n) {
   }
 }
 
+// 앱의 'PNG 저장' 버튼으로 실제 내려받아지는 이미지(html-to-image 결과)를 그대로 저장합니다.
 async function captureCard(name) {
-  const card = page.locator('[data-shot="report-card"]').first()
-  await card.screenshot({ path: `${OUT}/${name}.png` })
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 15000 }),
+    btn('PNG 저장').click(),
+  ])
+  await download.saveAs(`${OUT}/${name}.png`)
 }
 
 await page.goto(BASE, { waitUntil: 'networkidle' })
@@ -98,6 +102,7 @@ await step('06-kakao-text', async () => {
   const text = await page.evaluate(() => navigator.clipboard.readText())
   await writeFile(`${OUT}/06-kakao-text.txt`, text, 'utf8')
   await btn('카카오톡으로 보낼 글 미리보기').click()
+  await page.locator('pre').first().scrollIntoViewIfNeeded()
   await shot('06-kakao-preview', { full: false })
 })
 
