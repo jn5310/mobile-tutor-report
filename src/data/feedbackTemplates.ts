@@ -795,14 +795,17 @@ export interface ComposedComment {
 
 type Trend = 'rise' | 'drop' | 'hold';
 
+/** 이 점수 차이 미만이면 '유지'로 봅니다. 1~2점 변화에 '하락' 문장을 붙이지 않기 위함입니다. */
+const TREND_THRESHOLD = 3;
+
 function detectTrend(latest?: number, previous?: number): Trend {
   if (typeof latest !== 'number' || typeof previous !== 'number') {
     return 'hold';
   }
-  if (latest > previous) {
+  if (latest - previous >= TREND_THRESHOLD) {
     return 'rise';
   }
-  if (latest < previous) {
+  if (previous - latest >= TREND_THRESHOLD) {
     return 'drop';
   }
   return 'hold';
@@ -1085,8 +1088,8 @@ export function composeOverallComment(input: ComposeInput): ComposedComment {
     hello,
     scoreLine,
     weaknesses.length > 0 ? weaknesses.slice(0, 3).join(' ') : fallbackImprove,
-    neutralMath,
-    area,
+    weaknesses.length < 3 && neutralMath,
+    weaknesses.length < 2 && area,
     trend === 'drop' && direction,
     homeworkSentence(input.homeworkRate, 'improve', v),
     pick(CLOSINGS.improve, v),
