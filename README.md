@@ -4,7 +4,10 @@
 서버 없이 동작하며 학생 정보와 리포트는 선생님 폰의 브라우저(LocalStorage)에만 저장됩니다.
 홈 화면에 추가하면 앱처럼 전체 화면으로 열리고, 인터넷이 약한 곳에서도 열립니다.
 
-배포와 폰 설치 방법은 [PRIVATE_DEPLOY_GUIDE.md](./PRIVATE_DEPLOY_GUIDE.md)에 단계별로 적어 두었습니다.
+**앱 열기: <https://jn5310.github.io/mobile-tutor-report/>** (폰의 사파리/크롬으로 열고 "홈 화면에 추가")
+
+`main`에 Merge되면 `.github/workflows/pages.yml`이 GitHub Pages로 자동 배포합니다.
+Vercel로 배포하는 방법과 폰 설치 방법은 [PRIVATE_DEPLOY_GUIDE.md](./PRIVATE_DEPLOY_GUIDE.md)에 단계별로 적어 두었습니다.
 
 ## 화면
 
