@@ -64,8 +64,13 @@ export interface Report {
   mathUnit: string;
   /** 수학 이해도. */
   mathUnderstanding: MathUnderstanding;
-  /** 수학 오답 원인 목록. */
+  /** 수학 오답 원인 목록 (1문항 이상 체크된 원인). */
   mathErrorCauses: string[];
+  /**
+   * 수학 오답 원인별 문항 수. 비율 막대를 그리는 데 씁니다.
+   * 예전 버전에서 만든 리포트에는 없을 수 있습니다.
+   */
+  mathErrorCounts?: Record<string, number>;
   /** 이번 회차 테스트 점수. */
   testScores: ReportTestScore[];
   /** 학부모님께 전달할 총평 문구. */
@@ -76,13 +81,27 @@ export interface Report {
   createdAt: string;
 }
 
+/** 선생님 정보와 앱 설정. */
+export interface Settings {
+  /** 리포트 하단 서명에 들어갈 선생님 이름. */
+  teacherName: string;
+  /** 학원/과외 이름 (선택). */
+  academyName: string;
+  /** 마지막으로 JSON 백업을 내보낸 시각 (ISO 문자열). */
+  lastBackupAt?: string;
+}
+
 /** 앱 전체 데이터 루트. 백업 파일의 최상위 구조이기도 합니다. */
 export interface AppData {
   students: Student[];
   reports: Report[];
+  /** 선생님 정보. 예전 백업 파일에는 없을 수 있습니다. */
+  settings?: Settings;
   /** 스키마 버전. 추후 마이그레이션에 사용합니다. */
   version: number;
 }
+
+export const DEFAULT_SETTINGS: Settings = { teacherName: '', academyName: '' };
 
 /** 현재 데이터 스키마 버전. */
 export const DATA_VERSION = 1;

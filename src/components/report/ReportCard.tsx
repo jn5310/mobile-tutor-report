@@ -1,10 +1,13 @@
-// 모바일 카드뉴스 리포트 카드 (FEAT-004)
-// 학부모님 스마트폰에서 한눈에 보기 좋은 리포트 카드를 렌더링합니다.
-// html-to-image 로 캡처할 수 있도록 forwardRef 로 고정 폭 컨테이너를 노출합니다.
+// 학부모님께 보내는 리포트 카드
+// 종이 성적표처럼 보이도록 구성합니다: 머리말 -> 핵심 숫자 -> 점수 추이 -> 과목 분석 -> 총평 -> 과제 -> 서명.
+// html-to-image 로 캡처할 수 있도록 forwardRef 로 고정 폭(360px) 컨테이너를 노출합니다.
 
-import { forwardRef } from 'react'
-import { AppData, Report, Student } from '../../types'
+import { forwardRef, ReactNode } from 'react'
+import { AppData, Report, ScoreSubject, Student } from '../../types'
+import { getLast8Scores } from '../../lib/storage'
+import { KOREAN_TAG_NOTES, KoreanTag } from '../../data/feedbackTemplates'
 import ScoreChart from './ScoreChart'
+import ErrorRatioBar from './ErrorRatioBar'
 
 interface ReportCardProps {
   data: AppData
@@ -12,171 +15,205 @@ interface ReportCardProps {
   student: Student
 }
 
-/** ISO 날짜를 'YYYY년 M월 D일'로 표시합니다. */
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
+
 function formatKoreanDate(iso: string): string {
-  const parts = iso.split('-')
-  if (parts.length === 3) {
-    return `${parts[0]}년 ${Number(parts[1])}월 ${Number(parts[2])}일`
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) {
+    return iso
   }
-  return iso
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})`
 }
 
-/** 정보 행 라벨/값. */
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-2 text-sm">
-      <span className="w-14 shrink-0 font-semibold text-slate-500">{label}</span>
-      <span className="font-medium text-slate-900">{value}</span>
-    </div>
-  )
+/** 과제 문자열을 줄/쉼표 단위 항목으로 나눕니다. */
+export function splitAssignments(text: string): string[] {
+  return text
+    .split(/\n|,(?![^()]*\))/)
+    .map((s) => s.replace(/^[-·•\s]+/, '').trim())
+    .filter(Boolean)
 }
 
-/** 섹션 제목. */
-function SectionTitle({ children }: { children: string }) {
+function Block({ title, color, children }: { title: string; color?: string; children: ReactNode }) {
   return (
-    <h4 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-brand">
-      <span className="inline-block h-4 w-1 rounded-full bg-brand" />
+    <section className="border-t border-line px-5 py-4">
+      <h4 className="mb-2.5 text-[12px] font-bold tracking-wide" style={{ color: color ?? '#5F5B53' }}>
+        {title}
+      </h4>
       {children}
-    </h4>
+    </section>
   )
 }
 
-const ReportCard = forwardRef<HTMLDivElement, ReportCardProps>(function ReportCard(
-  { data, report, student },
-  ref,
-) {
+const ReportCard = forwardRef<HTMLDivElement, ReportCardProps>(function ReportCard({ data, report, student }, ref) {
   const showKorean = student.subjects === '국어' || student.subjects === '국수'
   const showMath = student.subjects === '수학' || student.subjects === '국수'
 
-  const hasKoreanAnalysis =
-    showKorean && (report.koreanAreas.length > 0 || report.koreanTags.length > 0)
-  const hasMathAnalysis =
-    showMath &&
-    (report.mathUnit.trim().length > 0 ||
-      report.mathErrorCauses.length > 0 ||
-      report.mathUnderstanding.length > 0)
+  const strengths = report.koreanTags.filter((t) => KOREAN_TAG_NOTES[t as KoreanTag]?.kind !== 'weakness')
+  const weaknesses = report.koreanTags.filter((t) => KOREAN_TAG_NOTES[t as KoreanTag]?.kind === 'weakness')
+  const hasKorean = showKorean && (report.koreanAreas.length > 0 || report.koreanTags.length > 0)
+  const hasMath =
+    showMath && (report.mathUnit.trim().length > 0 || report.mathErrorCauses.length > 0)
+
+  const previousOf = (subject: ScoreSubject): number | undefined => {
+    const hist = getLast8Scores(
+      { ...data, reports: data.reports.filter((r) => r.id !== report.id) },
+      student.id,
+      subject,
+    ).filter((s) => s.date < report.date)
+    return hist.length > 0 ? hist[hist.length - 1].score : undefined
+  }
+
+  const teacher = data.settings?.teacherName?.trim()
+  const academy = data.settings?.academyName?.trim()
+  const assignments = splitAssignments(report.nextAssignment)
+  const target = [student.targetUniversity, student.targetGrade].filter((v) => v && v.trim()).join(' · ')
 
   return (
     <div
       ref={ref}
+      data-shot="report-card"
       style={{ width: 360 }}
-      className="mx-auto overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200"
+      className="mx-auto overflow-hidden rounded-sm border border-line bg-white text-ink"
     >
-      {/* 헤더 */}
-      <div className="bg-brand px-5 py-5 text-white">
-        <p className="text-xs font-semibold opacity-90">주간 학습 리포트</p>
-        <h3 className="mt-1 text-2xl font-extrabold">{student.name} 학생</h3>
-        <p className="mt-1 text-sm opacity-90">{formatKoreanDate(report.date)}</p>
-      </div>
+      {/* 머리말 */}
+      <header className="px-5 pb-4 pt-5">
+        <div className="flex items-center justify-between text-[12px] text-ink-soft">
+          <span className="font-semibold tracking-wide">주간 학습 리포트</span>
+          <span>{academy || ''}</span>
+        </div>
+        <div className="mt-3 flex items-end justify-between">
+          <h3 className="text-[26px] font-bold leading-none">{student.name}</h3>
+          <span className="text-[13px] text-ink-soft">
+            {student.grade} · {student.subjects === '국수' ? '국어·수학' : student.subjects}
+          </span>
+        </div>
+        <p className="mt-2 text-[13px] text-ink-soft">{formatKoreanDate(report.date)} 수업</p>
+        {target && <p className="mt-0.5 text-[13px] text-ink-soft">목표 {target}</p>}
+      </header>
 
-      <div className="flex flex-col gap-5 px-5 py-5">
-        {/* 학생 정보 */}
-        <section>
-          <SectionTitle>학생 정보</SectionTitle>
-          <div className="flex flex-col gap-1.5 rounded-2xl bg-slate-50 p-3">
-            <InfoRow label="학년" value={student.grade} />
-            <InfoRow label="과목" value={student.subjects} />
-            <InfoRow
-              label="목표"
-              value={[student.targetUniversity, student.targetGrade]
-                .filter((v) => v && v.trim())
-                .join(' · ')}
-            />
+      {/* 핵심 숫자 */}
+      <div className="grid grid-cols-3 border-t border-line bg-paper/60 text-center">
+        <div className="px-1 py-3">
+          <div className="text-2xs text-ink-soft">테스트</div>
+          {report.testScores.length === 0 ? (
+            <div className="mt-1 text-[15px] text-ink-mute">-</div>
+          ) : (
+            report.testScores.map((t) => {
+              const prev = previousOf(t.subject)
+              const diff = typeof prev === 'number' ? t.score - prev : null
+              return (
+                <div key={t.subject} className="tabular mt-0.5 leading-tight">
+                  {report.testScores.length > 1 && (
+                    <span className="mr-1 text-2xs" style={{ color: t.subject === '국어' ? '#9A3B2E' : '#2B4C7E' }}>
+                      {t.subject}
+                    </span>
+                  )}
+                  <span className="text-[19px] font-bold">{t.score}</span>
+                  <span className="text-[12px]">점</span>
+                  {diff !== null && diff !== 0 && (
+                    <span className={['ml-1 text-[12px] font-semibold', diff > 0 ? 'text-brand' : 'text-kor'].join(' ')}>
+                      {diff > 0 ? `▲${diff}` : `▼${-diff}`}
+                    </span>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+        <div className="border-x border-line px-1 py-3">
+          <div className="text-2xs text-ink-soft">숙제</div>
+          <div className="tabular mt-0.5 text-[19px] font-bold">
+            {report.homeworkRate}
+            <span className="text-[12px] font-normal">%</span>
           </div>
-        </section>
-
-        {/* 점수 추이 */}
-        <section>
-          <SectionTitle>최근 테스트 점수 추이</SectionTitle>
-          <ScoreChart data={data} student={student} height={180} />
-        </section>
-
-        {/* 국어 영역 분석 */}
-        {hasKoreanAnalysis && (
-          <section>
-            <SectionTitle>국어 영역 분석</SectionTitle>
-            <div className="flex flex-col gap-2 text-sm">
-              {report.koreanAreas.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {report.koreanAreas.map((area) => (
-                    <span
-                      key={area}
-                      className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-semibold text-brand"
-                    >
-                      {area}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {report.koreanTags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {report.koreanTags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* 수학 오답 원인 */}
-        {hasMathAnalysis && (
-          <section>
-            <SectionTitle>수학 오답 원인 분석</SectionTitle>
-            <div className="flex flex-col gap-2 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                {report.mathUnit.trim() && (
-                  <span className="font-semibold text-slate-900">{report.mathUnit}</span>
-                )}
-                <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-semibold text-brand">
-                  이해도 {report.mathUnderstanding}
-                </span>
-              </div>
-              {report.mathErrorCauses.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {report.mathErrorCauses.map((cause) => (
-                    <span
-                      key={cause}
-                      className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
-                    >
-                      {cause}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* 선생님 총평 */}
-        {report.overallComment.trim() && (
-          <section>
-            <SectionTitle>선생님 총평</SectionTitle>
-            <p className="whitespace-pre-wrap rounded-2xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-700">
-              {report.overallComment}
-            </p>
-          </section>
-        )}
-
-        {/* 다음 시간 과제 */}
-        {report.nextAssignment.trim() && (
-          <section>
-            <SectionTitle>다음 시간 과제</SectionTitle>
-            <p className="whitespace-pre-wrap rounded-2xl bg-brand/5 p-3 text-sm leading-relaxed text-slate-800">
-              {report.nextAssignment}
-            </p>
-          </section>
-        )}
+        </div>
+        <div className="px-1 py-3">
+          <div className="text-2xs text-ink-soft">수업 태도</div>
+          <div className="mt-1 text-[15px] tracking-tight" style={{ color: '#C9922E' }}>
+            {'★'.repeat(report.attendanceFocus)}
+            <span className="text-line">{'★'.repeat(Math.max(0, 5 - report.attendanceFocus))}</span>
+          </div>
+        </div>
       </div>
 
-      <div className="border-t border-slate-100 px-5 py-3 text-center text-xs text-slate-400">
-        과외 리포트 생성기로 작성되었습니다.
-      </div>
+      <Block title="최근 테스트 점수">
+        <ScoreChart data={data} student={student} height={150} untilDate={report.date} />
+      </Block>
+
+      {hasKorean && (
+        <Block title="국어" color="#9A3B2E">
+          {report.koreanAreas.length > 0 && (
+            <p className="mb-2 text-[14px]">
+              <span className="mr-2 text-[12px] text-ink-soft">수업 영역</span>
+              {report.koreanAreas.join(' · ')}
+            </p>
+          )}
+          {strengths.length > 0 && (
+            <ul className="space-y-1 text-[14px]">
+              {strengths.map((t) => (
+                <li key={t} className="flex gap-2">
+                  <span className="w-3 shrink-0 text-center text-brand">○</span>
+                  {t}
+                </li>
+              ))}
+            </ul>
+          )}
+          {weaknesses.length > 0 && (
+            <ul className={['space-y-1 text-[14px]', strengths.length > 0 ? 'mt-1' : ''].join(' ')}>
+              {weaknesses.map((t) => (
+                <li key={t} className="flex gap-2">
+                  <span className="w-3 shrink-0 text-center text-kor">△</span>
+                  {t}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Block>
+      )}
+
+      {hasMath && (
+        <Block title="수학" color="#2B4C7E">
+          <p className="mb-3 flex items-baseline justify-between text-[14px]">
+            <span>
+              <span className="mr-2 text-[12px] text-ink-soft">진도</span>
+              {report.mathUnit.trim() || '-'}
+            </span>
+            <span className="text-[13px] text-ink-soft">
+              개념 이해도 <b className="text-math">{report.mathUnderstanding}</b>
+            </span>
+          </p>
+          {report.mathErrorCauses.length > 0 && (
+            <>
+              <p className="mb-1.5 text-[12px] text-ink-soft">오답 원인</p>
+              <ErrorRatioBar counts={report.mathErrorCounts ?? {}} fallbackCauses={report.mathErrorCauses} />
+            </>
+          )}
+        </Block>
+      )}
+
+      {report.overallComment.trim() && (
+        <Block title="선생님 총평">
+          <p className="whitespace-pre-wrap text-[14px] leading-[1.75]">{report.overallComment}</p>
+        </Block>
+      )}
+
+      {assignments.length > 0 && (
+        <Block title="다음 시간까지">
+          <ul className="space-y-1.5 text-[14px]">
+            {assignments.map((a, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="mt-[3px] inline-block h-3.5 w-3.5 shrink-0 rounded-[2px] border border-ink-soft" />
+                {a}
+              </li>
+            ))}
+          </ul>
+        </Block>
+      )}
+
+      <footer className="flex items-center justify-between border-t border-line px-5 py-3 text-[12px] text-ink-soft">
+        <span>{formatKoreanDate(report.date).replace(/ \(.\)$/, '')}</span>
+        <span className="font-semibold text-ink">{teacher ? `${teacher} 선생님 드림` : '담당 선생님 드림'}</span>
+      </footer>
     </div>
   )
 })

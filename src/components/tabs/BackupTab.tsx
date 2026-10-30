@@ -1,23 +1,41 @@
-// 데이터 백업 탭 (FEAT-004)
-// 전체 데이터를 JSON 파일로 내보내고(백업), 백업 파일을 불러와(복구) 기기 변경에 대응합니다.
-// 모든 데이터는 이 브라우저의 LocalStorage 에만 저장된다는 점을 안내합니다.
+// 데이터 백업 탭
+// 선생님 정보(리포트 서명) 설정, 전체 데이터 JSON 내보내기(백업)/불러오기(복구),
+// 샘플 데이터 불러오기, 전체 삭제를 담습니다.
 
 import { useRef, useState } from 'react'
-import { Database, Download, Info, Sparkles, Upload } from 'lucide-react'
+import { Download, Upload } from 'lucide-react'
 import { exportToJsonFile, importFromJsonFile } from '../../lib/backup'
-import { replaceData } from '../../lib/storage'
+import { clearData, replaceData, updateSettings } from '../../lib/storage'
 import { generateSampleData } from '../../lib/sampleData'
+import { createEmptyAppData } from '../../types'
 import Button from '../ui/Button'
 import Toast, { ToastState } from '../ui/Toast'
 import { TabProps } from './types'
 
+function daysSince(iso: string): number {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+}
+
 function BackupTab({ data, setData }: TabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
+  const [teacherName, setTeacherName] = useState(data.settings?.teacherName ?? '')
+  const [academyName, setAcademyName] = useState(data.settings?.academyName ?? '')
 
-  const notify = (message: string, kind: ToastState['kind'] = 'success') => {
-    setToast({ message, kind })
+  const notify = (message: string, kind: ToastState['kind'] = 'success') => setToast({ message, kind })
+
+  const settingsDirty =
+    teacherName.trim() !== (data.settings?.teacherName ?? '') ||
+    academyName.trim() !== (data.settings?.academyName ?? '')
+
+  const saveSettings = () => {
+    setData(updateSettings(data, { teacherName: teacherName.trim(), academyName: academyName.trim() }))
+    notify('선생님 정보를 저장했습니다.')
   }
+
+  const lastBackup = data.settings?.lastBackupAt
+  const backupAge = lastBackup ? daysSince(lastBackup) : null
+  const needsBackup = data.reports.length > 0 && (backupAge === null || backupAge >= 14)
 
   const handleExport = () => {
     if (data.students.length === 0 && data.reports.length === 0) {
@@ -25,20 +43,17 @@ function BackupTab({ data, setData }: TabProps) {
       return
     }
     try {
-      exportToJsonFile(data)
-      notify('백업 파일을 내보냈습니다.')
+      const next = updateSettings(data, { lastBackupAt: new Date().toISOString() })
+      exportToJsonFile(next)
+      setData(next)
+      notify('백업 파일을 저장했습니다. 카카오톡 나에게 보내기나 드라이브에 올려 두세요.')
     } catch {
       notify('내보내기에 실패했습니다.', 'error')
     }
   }
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click()
-  }
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    // 같은 파일을 다시 선택해도 onChange 가 발생하도록 값을 초기화합니다.
     e.target.value = ''
     if (!file) {
       return
@@ -46,13 +61,15 @@ function BackupTab({ data, setData }: TabProps) {
     try {
       const imported = await importFromJsonFile(file)
       const ok = window.confirm(
-        `불러온 파일에 학생 ${imported.students.length}명, 리포트 ${imported.reports.length}건이 있습니다. 현재 데이터를 덮어쓸까요?`,
+        `백업 파일에 학생 ${imported.students.length}명, 리포트 ${imported.reports.length}건이 있습니다.\n지금 이 폰에 있는 데이터를 이 파일 내용으로 바꿀까요?`,
       )
       if (!ok) {
-        notify('복구를 취소했습니다.', 'error')
         return
       }
-      setData(replaceData(imported))
+      const restored = replaceData(imported)
+      setData(restored)
+      setTeacherName(restored.settings?.teacherName ?? '')
+      setAcademyName(restored.settings?.academyName ?? '')
       notify('백업 데이터를 복구했습니다.')
     } catch (err) {
       notify(err instanceof Error ? err.message : '불러오기에 실패했습니다.', 'error')
@@ -60,61 +77,92 @@ function BackupTab({ data, setData }: TabProps) {
   }
 
   const handleLoadSample = () => {
-    const ok = window.confirm(
-      '샘플 데이터를 불러오면 현재 데이터를 덮어씁니다. 계속할까요?',
-    )
-    if (!ok) {
+    if (data.students.length > 0 && !window.confirm('지금 데이터를 지우고 샘플 데이터로 바꿉니다. 계속할까요?')) {
       return
     }
-    setData(replaceData(generateSampleData()))
+    setData(replaceData({ ...generateSampleData(), settings: data.settings }))
     notify('샘플 데이터를 불러왔습니다.')
   }
 
+  const handleClear = () => {
+    if (!window.confirm(`학생 ${data.students.length}명과 리포트 ${data.reports.length}건을 모두 지웁니다.\n백업 파일이 없다면 되돌릴 수 없습니다. 계속할까요?`)) {
+      return
+    }
+    clearData()
+    setData(replaceData({ ...createEmptyAppData(), settings: data.settings }))
+    notify('모든 학생과 리포트를 지웠습니다.')
+  }
+
   return (
-    <section className="px-4 py-4">
-      <h2 className="mb-4 text-lg font-bold text-slate-900">데이터 백업</h2>
+    <div className="pb-4">
+      <div className="px-4 pb-4 pt-5">
+        <h2 className="text-[22px] font-bold text-ink">데이터 백업</h2>
+        <p className="mt-0.5 text-sm text-ink-soft">
+          학생 {data.students.length}명 · 리포트 {data.reports.length}건이 이 폰에 저장되어 있습니다
+        </p>
+      </div>
 
-      <div className="flex flex-col gap-4">
-        {/* 안내 */}
-        <div className="flex items-start gap-2 rounded-2xl bg-brand/5 p-3 text-sm text-slate-600">
-          <Info size={18} className="mt-0.5 shrink-0 text-brand" />
-          <p>
-            모든 데이터는 이 스마트폰(브라우저)의 저장소에만 보관됩니다. 기기를 바꾸거나 앱을 지우면
-            데이터가 사라질 수 있으니, 주기적으로 JSON 파일로 내보내 백업해 주세요.
+      <div className="flex flex-col gap-3">
+        <section className="sheet">
+          <div className="section-label">
+            <span className="text-[15px]">선생님 정보</span>
+          </div>
+          <p className="-mt-1 mb-4 text-[13px] leading-relaxed text-ink-soft">
+            리포트 카드 아래와 카카오톡 글 끝에 서명으로 들어갑니다.
           </p>
-        </div>
+          <label className="field-label" htmlFor="teacher-name">
+            이름
+          </label>
+          <input
+            id="teacher-name"
+            type="text"
+            value={teacherName}
+            onChange={(e) => setTeacherName(e.target.value)}
+            placeholder="예: 김민지"
+            autoComplete="name"
+            className="text-input mb-4"
+          />
+          <label className="field-label" htmlFor="academy-name">
+            학원/과외 이름 <span className="text-ink-mute">(선택)</span>
+          </label>
+          <input
+            id="academy-name"
+            type="text"
+            value={academyName}
+            onChange={(e) => setAcademyName(e.target.value)}
+            placeholder="예: 민지쌤 국어"
+            autoComplete="organization"
+            className="text-input mb-4"
+          />
+          <Button onClick={saveSettings} variant="secondary" fullWidth disabled={!settingsDirty}>
+            {settingsDirty ? '저장' : '저장됨'}
+          </Button>
+        </section>
 
-        {/* 현재 데이터 요약 */}
-        <div className="flex gap-3">
-          <div className="flex-1 rounded-2xl border border-slate-200 p-3 text-center">
-            <p className="text-2xl font-extrabold text-slate-900">{data.students.length}</p>
-            <p className="text-xs text-slate-500">학생</p>
+        <section className="sheet">
+          <div className="section-label justify-between">
+            <span className="text-[15px]">백업 파일 만들기</span>
+            <span className={['text-[13px] font-normal', needsBackup ? 'text-kor' : 'text-ink-mute'].join(' ')}>
+              {backupAge === null ? '아직 백업한 적 없음' : backupAge === 0 ? '오늘 백업함' : `${backupAge}일 전 백업`}
+            </span>
           </div>
-          <div className="flex-1 rounded-2xl border border-slate-200 p-3 text-center">
-            <p className="text-2xl font-extrabold text-slate-900">{data.reports.length}</p>
-            <p className="text-xs text-slate-500">리포트</p>
-          </div>
-        </div>
-
-        {/* 내보내기 */}
-        <div className="rounded-2xl border border-slate-200 p-4">
-          <h3 className="mb-1 text-sm font-bold text-slate-900">전체 데이터 JSON 내보내기</h3>
-          <p className="mb-3 text-xs text-slate-500">
-            학생과 리포트 전체를 하나의 JSON 파일로 저장합니다.
+          <p className="-mt-1 mb-4 text-[13px] leading-relaxed text-ink-soft">
+            학생과 리포트 전체를 JSON 파일 하나로 저장합니다. 폰을 바꾸거나 브라우저 데이터를 지우기 전에 꼭 만들어 두세요.
           </p>
           <Button onClick={handleExport} size="lg" fullWidth>
             <Download size={18} />
             JSON 파일로 내보내기
           </Button>
-        </div>
+        </section>
 
-        {/* 불러오기 */}
-        <div className="rounded-2xl border border-slate-200 p-4">
-          <h3 className="mb-1 text-sm font-bold text-slate-900">백업 파일 불러오기</h3>
-          <p className="mb-3 text-xs text-slate-500">
-            내보낸 JSON 파일을 선택하면 현재 데이터를 덮어쓰고 복구합니다.
+        <section className="sheet">
+          <div className="section-label">
+            <span className="text-[15px]">백업 파일로 복구하기</span>
+          </div>
+          <p className="-mt-1 mb-4 text-[13px] leading-relaxed text-ink-soft">
+            내보낸 JSON 파일을 고르면 지금 데이터를 그 파일 내용으로 바꿉니다.
           </p>
-          <Button onClick={handleImportClick} variant="secondary" size="lg" fullWidth>
+          <Button onClick={() => fileInputRef.current?.click()} variant="secondary" size="lg" fullWidth>
             <Upload size={18} />
             백업 파일 선택
           </Button>
@@ -125,28 +173,42 @@ function BackupTab({ data, setData }: TabProps) {
             onChange={handleFileChange}
             className="hidden"
           />
-        </div>
+        </section>
 
-        {/* 샘플 데이터 */}
-        <div className="rounded-2xl border border-dashed border-slate-300 p-4">
-          <h3 className="mb-1 text-sm font-bold text-slate-900">샘플 데이터 불러오기</h3>
-          <p className="mb-3 text-xs text-slate-500">
-            기능을 바로 체험하고 싶다면 예시 학생과 리포트를 불러올 수 있습니다.
-          </p>
-          <Button onClick={handleLoadSample} variant="ghost" size="lg" fullWidth>
-            <Sparkles size={18} />
+        <section className="px-4 pt-2">
+          <h3 className="mb-2 text-[13px] font-semibold text-ink-soft">알아 두세요</h3>
+          <ul className="list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-ink-soft">
+            <li>데이터는 서버가 아니라 이 폰의 브라우저 안에만 저장됩니다. 다른 사람은 볼 수 없습니다.</li>
+            <li>
+              아이폰은 사파리에서 쓰던 데이터와 홈 화면에 추가한 앱의 데이터가 서로 따로 저장됩니다. 사파리에서 먼저 써 봤다면
+              백업 파일을 만든 뒤 홈 화면 앱에서 복구해 주세요.
+            </li>
+            <li>브라우저의 방문 기록·사이트 데이터를 지우면 리포트도 함께 지워집니다.</li>
+          </ul>
+        </section>
+
+        <section className="flex flex-col items-start gap-1 px-4 pt-4">
+          <button
+            type="button"
+            onClick={handleLoadSample}
+            className="min-h-[44px] text-sm text-ink-soft underline underline-offset-4"
+          >
             샘플 데이터 불러오기
-          </Button>
-        </div>
-
-        <div className="flex items-center justify-center gap-2 py-2 text-slate-300">
-          <Database size={16} />
-          <span className="text-xs">LocalStorage 기반 저장</span>
-        </div>
+          </button>
+          {(data.students.length > 0 || data.reports.length > 0) && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="min-h-[44px] text-sm text-kor underline underline-offset-4"
+            >
+              모든 학생과 리포트 지우기
+            </button>
+          )}
+        </section>
       </div>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
-    </section>
+    </div>
   )
 }
 

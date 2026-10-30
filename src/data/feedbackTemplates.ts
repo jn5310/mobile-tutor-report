@@ -715,12 +715,48 @@ export const allTemplates: FeedbackTemplate[] = [
 //   total     = 93  (>= 80)
 
 // ---------------------------------------------------------------------------
+// 국어 강점·약점 태그별 한 줄 코멘트
+// 선생님이 누른 태그가 총평에 그대로 반영되도록 태그마다 문장을 하나씩 둡니다.
+// ---------------------------------------------------------------------------
+export interface TagNote {
+  kind: 'strength' | 'weakness';
+  text: string;
+}
+
+export const KOREAN_TAG_NOTES: Record<KoreanTag, TagNote> = {
+  '지문 구조화 우수': { kind: 'strength', text: '문단 사이의 관계를 잡아 지문 전체 구조를 정리하는 힘이 좋습니다.' },
+  '핵심어 포착 능숙': { kind: 'strength', text: '지문에서 반복되는 핵심어를 빠르게 짚어 내고 있습니다.' },
+  '선지 근거 찾기 연습 필요': { kind: 'weakness', text: '답을 고를 때 지문 속 근거 문장을 직접 표시하는 연습이 더 필요합니다.' },
+  '시간 배분 개선 중': { kind: 'weakness', text: '지문당 풀이 시간을 재며 연습하고 있고, 조금씩 시간이 줄고 있습니다.' },
+  '고전 어휘력 보완 필요': { kind: 'weakness', text: '고전 시가와 산문에 자주 나오는 어휘를 따로 정리해 외울 필요가 있습니다.' },
+  '현대문학 정서 파악 우수': { kind: 'strength', text: '현대시와 소설에서 화자와 인물의 정서를 정확하게 읽어 냅니다.' },
+  '문법 개념 암기 탄탄': { kind: 'strength', text: '문법 개념을 정확하게 기억하고 있어 문제 적용이 안정적입니다.' },
+  '화작 담화 분석 안정적': { kind: 'strength', text: '화법과 작문 지문의 말하기 방식과 글쓰기 전략을 안정적으로 분석합니다.' },
+  '추론적 사고 강화 필요': { kind: 'weakness', text: '지문에 직접 나오지 않은 내용을 추론하는 문제에서 아직 흔들림이 있습니다.' },
+  '배경지식 활용 능숙': { kind: 'strength', text: '이미 알고 있는 배경지식을 지문 이해에 잘 연결합니다.' },
+  '오답 근거 설명 연습 필요': { kind: 'weakness', text: '틀린 문제에서 왜 틀렸는지 스스로 설명해 보는 연습을 이어 가겠습니다.' },
+  '발표 자신감 상승': { kind: 'strength', text: '풀이 과정을 말로 설명할 때 자신감이 눈에 띄게 늘었습니다.' },
+  '어휘력 탄탄': { kind: 'strength', text: '어휘력이 탄탄해 낯선 지문도 막힘없이 읽어 나갑니다.' },
+  '지문 요약 능력 향상 중': { kind: 'strength', text: '문단별로 한 줄 요약하는 실력이 꾸준히 늘고 있습니다.' },
+  '선지 비교 판단 신중함 필요': { kind: 'weakness', text: '비슷한 선지 두 개가 남았을 때 성급하게 고르는 경향이 있어 신중함이 필요합니다.' },
+  '문맥 추론 정확도 우수': { kind: 'strength', text: '앞뒤 문맥으로 낱말과 문장의 의미를 정확하게 추론합니다.' },
+  '글의 흐름 파악 능숙': { kind: 'strength', text: '글의 전개 방식과 흐름을 잘 따라갑니다.' },
+};
+
+// ---------------------------------------------------------------------------
 // 총평 자동 조합: composeOverallComment
 // ---------------------------------------------------------------------------
 
+/** 과목별 이번 점수와 직전 점수. */
+export interface SubjectScore {
+  subject: string;
+  latest: number;
+  previous?: number;
+}
+
 /** 총평 조합 입력. */
 export interface ComposeInput {
-  /** 학생 이름 (선택). 있으면 인사말에 활용합니다. */
+  /** 학생 이름 (선택). 있으면 '서연이는'처럼 부르는 이름으로 씁니다. */
   studentName?: string;
   /** 선택된 국어 강점·약점 태그. */
   koreanTags?: string[];
@@ -728,16 +764,23 @@ export interface ComposeInput {
   koreanAreas?: string[];
   /** 선택된 수학 오답 원인. */
   mathErrorCauses?: string[];
+  /** 수학 오답 원인별 문항 수. 가장 많은 원인을 먼저 다룹니다. */
+  mathErrorCounts?: Record<string, number>;
+  /** 수학 진도 단원명. */
+  mathUnit?: string;
   /** 수학 이해도. */
   mathUnderstanding?: MathUnderstanding;
   /** 숙제 수행률 (0 ~ 100). */
   homeworkRate?: number;
-  /** 이번 회차 점수. */
-  latestScore?: number;
-  /** 지난 회차 점수. 비교하여 상승/하락을 판정합니다. */
-  previousScore?: number;
+  /** 과목별 이번/직전 점수. */
+  subjectScores?: SubjectScore[];
   /** 수업 집중도 별점 (1 ~ 5). */
   attendanceFocus?: number;
+  /**
+   * 문장 선택 번호. 같은 입력이라도 값이 바뀌면 다른 템플릿 문장을 고릅니다.
+   * 매주 같은 문장이 반복되지 않도록 '다른 문장으로' 버튼에서 1씩 올립니다.
+   */
+  variant?: number;
 }
 
 /** composeOverallComment 반환 구조: 3가지 버전의 총평. */
@@ -765,146 +808,298 @@ function detectTrend(latest?: number, previous?: number): Trend {
   return 'hold';
 }
 
-/** 태그 중 하나라도 포함하는 템플릿을 반환합니다. */
-function templatesForTags(
-  pool: FeedbackTemplate[],
-  tags: string[] | undefined,
-): FeedbackTemplate[] {
-  if (!tags || tags.length === 0) {
-    return [];
+/** 받침 유무. 한글이 아니면 받침 없음으로 봅니다. */
+function hasBatchim(word: string): boolean {
+  const code = word.charCodeAt(word.length - 1) - 0xac00;
+  if (code < 0 || code > 11171) {
+    return false;
   }
-  return pool.filter((t) => t.tags?.some((tag) => tags.includes(tag)));
+  return code % 28 !== 0;
 }
 
-function firstTexts(templates: FeedbackTemplate[], limit: number): string[] {
-  return templates.slice(0, limit).map((t) => t.text);
+/** '김서연' -> '서연이', '박준호' -> '준호'. 이름이 없으면 '학생'. */
+export function callName(fullName?: string): string {
+  const name = (fullName ?? '').trim();
+  if (!name) {
+    return '학생';
+  }
+  const given = name.length >= 3 ? name.slice(1) : name;
+  return hasBatchim(given) ? `${given}이` : given;
 }
 
-function join(parts: (string | undefined)[]): string {
-  return parts.filter((p): p is string => Boolean(p && p.trim())).join(' ');
+/** 단어 뒤에 붙는 조사 고르기: 은/는, 이/가, 을/를, 으로/로. */
+function josa(word: string, pair: '은는' | '이가' | '을를' | '으로'): string {
+  const batchim = hasBatchim(word);
+  switch (pair) {
+    case '은는':
+      return word + (batchim ? '은' : '는');
+    case '이가':
+      return word + (batchim ? '이' : '가');
+    case '을를':
+      return word + (batchim ? '을' : '를');
+    case '으로': {
+      // 'ㄹ' 받침은 '로'
+      const code = word.charCodeAt(word.length - 1) - 0xac00;
+      const isRieul = code >= 0 && code <= 11171 && code % 28 === 8;
+      return word + (batchim && !isRieul ? '으로' : '로');
+    }
+  }
 }
 
-function greeting(name?: string): string {
-  return name
-    ? `안녕하세요, ${name} 학생 학부모님.`
-    : '안녕하세요, 학부모님.';
+/** variant 와 offset 으로 목록에서 하나를 고릅니다. */
+function pick<T>(pool: readonly T[], variant: number, offset = 0): T | undefined {
+  if (pool.length === 0) {
+    return undefined;
+  }
+  const i = Math.abs(variant + offset) % pool.length;
+  return pool[i];
 }
 
-const CLOSING_PRAISE =
-  '앞으로도 아이의 강점을 든든히 키워 가도록 정성껏 지도하겠습니다. 감사합니다.';
-const CLOSING_IMPROVE =
-  '부족한 부분은 조급해하지 않고 차근차근 보완해 가겠습니다. 가정에서의 따뜻한 격려 부탁드립니다. 감사합니다.';
-const CLOSING_BALANCED =
-  '강점은 살리고 약점은 보완하며 목표를 향해 꾸준히 나아가도록 지도하겠습니다. 감사합니다.';
+function join(parts: (string | undefined | false)[]): string {
+  return parts
+    .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+    .join(' ');
+}
 
-function homeworkSentence(rate: number | undefined, tone: FeedbackTone): string {
+function templatesWithTag(pool: FeedbackTemplate[], tag: string): FeedbackTemplate[] {
+  return pool.filter((t) => t.tags?.includes(tag));
+}
+
+const CLOSINGS = {
+  praise: [
+    '지금처럼 잘 따라와 준다면 좋은 결과로 이어질 것이라 생각합니다. 감사합니다.',
+    '아이가 스스로 잘하고 있다는 걸 느낄 수 있도록 집에서도 한마디 칭찬 부탁드립니다. 감사합니다.',
+    '이 흐름이 이어지도록 다음 주에도 꼼꼼히 챙기겠습니다. 감사합니다.',
+  ],
+  improve: [
+    '부족한 부분은 수업에서 하나씩 짚어 가겠습니다. 집에서는 과제를 마쳤는지만 가볍게 확인해 주시면 충분합니다. 감사합니다.',
+    '조급하게 보지 않고 한 단계씩 보완하겠습니다. 궁금하신 점은 언제든 편하게 말씀해 주세요. 감사합니다.',
+    '다음 수업에서 이 부분을 집중적으로 다루겠습니다. 감사합니다.',
+  ],
+  balanced: [
+    '잘하는 부분은 살리고 아쉬운 부분은 채워 가며 목표까지 꾸준히 가겠습니다. 감사합니다.',
+    '다음 주 수업도 이 방향으로 이어 가겠습니다. 감사합니다.',
+    '궁금하신 점은 편하게 연락 주세요. 다음 주에 다시 소식 전하겠습니다. 감사합니다.',
+  ],
+} as const;
+
+function greeting(call: string, variant: number): string {
+  const options = [
+    `안녕하세요, 학부모님. ${call}의 이번 주 수업 내용을 정리해 드립니다.`,
+    `안녕하세요, 학부모님. 이번 주 ${call} 수업 소식 전해 드립니다.`,
+    `안녕하세요, 학부모님. ${call}의 한 주 학습 내용을 말씀드립니다.`,
+  ];
+  return pick(options, variant) ?? options[0];
+}
+
+/** 점수를 숫자 그대로 적어 줍니다. 예: '국어 테스트는 80점에서 88점으로 올랐습니다.' */
+function scoreSentence(scores: SubjectScore[]): string {
+  const parts = scores.map((s) => {
+    const label = `${s.subject} 테스트`;
+    if (typeof s.previous !== 'number') {
+      return `이번 ${josa(label, '은는')} ${s.latest}점입니다.`;
+    }
+    const diff = s.latest - s.previous;
+    if (diff > 0) {
+      return `${josa(label, '은는')} 지난번 ${s.previous}점에서 ${s.latest}점으로 ${diff}점 올랐습니다.`;
+    }
+    if (diff < 0) {
+      return `${josa(label, '은는')} 지난번 ${s.previous}점에서 ${s.latest}점으로 ${-diff}점 내려갔습니다.`;
+    }
+    return `${josa(label, '은는')} 지난번과 같은 ${s.latest}점입니다.`;
+  });
+  return parts.join(' ');
+}
+
+function homeworkSentence(
+  rate: number | undefined,
+  tone: 'praise' | 'improve',
+  variant: number,
+): string {
   if (typeof rate !== 'number') {
     return '';
   }
-  if (rate >= 85) {
-    return '숙제 수행도 성실하여 학습 흐름이 잘 이어지고 있습니다.';
+  if (rate >= 90) {
+    return pick(
+      [
+        '숙제도 빠짐없이 해 와서 수업 진도가 잘 이어지고 있습니다.',
+        '과제를 꼼꼼하게 해 오고 있어 수업 시간을 알차게 쓰고 있습니다.',
+      ],
+      variant,
+    ) ?? '';
   }
   if (rate >= 60) {
     return tone === 'praise'
-      ? '과제도 비교적 꾸준히 수행하고 있어 긍정적입니다.'
-      : '과제 수행률을 조금만 더 끌어올리면 효과가 한층 커질 것입니다.';
+      ? `숙제는 ${rate}% 정도 해 왔고, 꾸준히 하려는 모습이 보입니다.`
+      : `숙제는 ${rate}% 정도 해 왔습니다. 남은 부분까지 마무리하면 효과가 더 커질 것입니다.`;
   }
-  // 60 미만이면 완곡한 숙제 안내 템플릿 활용
-  return homeworkTemplates[0].text;
+  // 60% 미만은 완곡한 숙제 안내 템플릿을 돌려 가며 씁니다.
+  return pick(homeworkTemplates, variant)?.text ?? '';
 }
 
-function focusSentence(focus: number | undefined): string {
+function focusSentence(focus: number | undefined, variant: number): string {
   if (typeof focus !== 'number') {
     return '';
   }
-  if (focus >= 4) {
-    return '수업 중 집중도가 높아 지도에 큰 힘이 됩니다.';
+  if (focus >= 5) {
+    return pick(
+      ['수업 내내 집중력이 아주 좋았습니다.', '이번 주는 수업 태도가 특히 좋았습니다.'],
+      variant,
+    ) ?? '';
+  }
+  if (focus === 4) {
+    return '수업 중 집중도도 좋은 편이었습니다.';
   }
   if (focus === 3) {
-    return '수업 집중도는 보통 수준으로, 몰입을 끌어올릴 작은 장치를 더해 보겠습니다.';
+    return '수업 후반에 집중이 조금 흐트러져, 중간에 짧게 쉬어 가며 진행하고 있습니다.';
   }
-  return '수업 집중도가 다소 아쉬워, 흥미를 높이는 방향으로 수업을 구성하겠습니다.';
+  return '이번 주는 수업 집중이 다소 어려워 보여, 컨디션을 함께 살피며 진행하겠습니다.';
 }
 
-function directionSentence(trend: Trend): string {
+function directionSentence(trend: Trend, variant: number): string {
   const pool = directionTemplates.filter((t) => t.tags?.includes(trend));
-  return pool.length > 0 ? pool[0].text : '';
+  return pick(pool, variant, 1)?.text ?? '';
 }
 
-/** 강점 성격의 국어 태그 처방 문장들을 모읍니다. */
-function strengthSentences(input: ComposeInput): string[] {
-  const korean = templatesForTags(koreanTemplates, input.koreanTags);
-  const areas = templatesForTags(koreanTemplates, input.koreanAreas);
-  const sentences: string[] = [];
-  if (input.mathUnderstanding === '상') {
-    const up = mathTemplates.find((t) => t.tags?.includes('상'));
-    if (up) {
-      sentences.push(up.text);
-    }
-  }
-  sentences.push(...firstTexts([...korean, ...areas], 2));
-  return sentences;
+/** 오답 원인을 문항 수 많은 순으로 정렬합니다. 개수가 없으면 선택 순서를 따릅니다. */
+function rankedCauses(input: ComposeInput): { cause: string; count: number }[] {
+  const counts = input.mathErrorCounts ?? {};
+  const causes = new Set<string>([
+    ...(input.mathErrorCauses ?? []),
+    ...Object.keys(counts).filter((k) => (counts[k] ?? 0) > 0),
+  ]);
+  return Array.from(causes)
+    .map((cause) => ({ cause, count: counts[cause] ?? 0 }))
+    .sort((a, b) => b.count - a.count);
 }
 
-/** 약점 보완 성격의 처방 문장들을 모읍니다. */
-function improveSentences(input: ComposeInput): string[] {
-  const math = templatesForTags(mathTemplates, input.mathErrorCauses);
-  const areas = templatesForTags(koreanTemplates, input.koreanAreas);
-  const sentences: string[] = [];
-  sentences.push(...firstTexts(math, 2));
-  if (input.mathUnderstanding === '하') {
-    const low = mathTemplates.find((t) => t.tags?.includes('하'));
-    if (low) {
-      sentences.push(low.text);
-    }
+function mathCauseSentence(input: ComposeInput, variant: number): string[] {
+  const ranked = rankedCauses(input);
+  if (ranked.length === 0) {
+    return [];
   }
-  sentences.push(...firstTexts(areas, 1));
-  return sentences;
+  const total = ranked.reduce((sum, r) => sum + r.count, 0);
+  const top = ranked[0];
+  const out: string[] = [];
+  if (top.count > 0 && total > 0) {
+    out.push(
+      `틀린 ${total}문항 중 ${top.count}문항이 '${top.cause}' 때문이었습니다.`,
+    );
+  } else {
+    out.push(`오답은 주로 '${top.cause}'에서 나왔습니다.`);
+  }
+  const prescription = pick(templatesWithTag(mathTemplates, top.cause), variant);
+  if (prescription) {
+    out.push(prescription.text);
+  }
+  return out;
+}
+
+function mathUnderstandingSentence(input: ComposeInput, call: string): string {
+  const unit = (input.mathUnit ?? '').trim();
+  const u = input.mathUnderstanding;
+  if (!u) {
+    return '';
+  }
+  const unitPart = unit ? `${josa(unit, '은는')} ` : '이번 단원은 ';
+  if (u === '상') {
+    return `${unitPart}개념을 잘 이해하고 있어 응용 문제로 넘어가고 있습니다.`;
+  }
+  if (u === '중') {
+    return `${unitPart}${josa(call, '이가')} 기본 개념은 이해했고, 유형 연습을 더 하면 안정될 것 같습니다.`;
+  }
+  return `${unitPart}아직 개념이 익숙하지 않아 기본 예제부터 다시 다지고 있습니다.`;
+}
+
+function koreanNotes(tags: string[] | undefined, kind: TagNote['kind']): string[] {
+  return (tags ?? [])
+    .map((t) => KOREAN_TAG_NOTES[t as KoreanTag])
+    .filter((n): n is TagNote => Boolean(n) && n.kind === kind)
+    .map((n) => n.text);
+}
+
+function areaPrescription(areas: string[] | undefined, variant: number): string {
+  const first = (areas ?? [])[0];
+  if (!first) {
+    return '';
+  }
+  return pick(templatesWithTag(koreanTemplates, first), variant)?.text ?? '';
+}
+
+/** 여러 과목 점수 중 대표 추세(하락이 하나라도 있으면 하락 우선)를 구합니다. */
+function overallTrend(scores: SubjectScore[]): Trend {
+  const trends = scores.map((s) => detectTrend(s.latest, s.previous));
+  if (trends.includes('drop')) {
+    return 'drop';
+  }
+  if (trends.includes('rise')) {
+    return 'rise';
+  }
+  return 'hold';
 }
 
 /**
  * 선택한 태그/영역/오답 원인, 숙제 수행률, 점수 추세를 바탕으로
  * '칭찬 중심 / 약점 보완 중심 / 균형형' 3가지 총평을 자동 조합합니다.
+ * variant 값을 바꾸면 같은 입력에서도 다른 템플릿 문장이 선택됩니다.
  */
 export function composeOverallComment(input: ComposeInput): ComposedComment {
-  const trend = detectTrend(input.latestScore, input.previousScore);
-  const hello = greeting(input.studentName);
-  const strengths = strengthSentences(input);
-  const improvements = improveSentences(input);
-  const direction = directionSentence(trend);
+  const v = input.variant ?? 0;
+  const call = callName(input.studentName);
+  const scores = input.subjectScores ?? [];
+  const trend = overallTrend(scores);
+  const hello = greeting(call, v);
+  const scoreLine = scores.length > 0 ? scoreSentence(scores) : '';
 
-  // 선택 항목이 거의 없을 때를 대비한 기본 문장
-  const fallbackStrength = '수업에 임하는 태도가 성실하여 학습의 기본기가 잘 잡혀 가고 있습니다.';
-  const fallbackImprove = '부족한 부분을 꾸준히 점검하며 보완해 가겠습니다.';
+  const strengths = [
+    ...koreanNotes(input.koreanTags, 'strength'),
+    input.mathUnderstanding === '상' ? mathUnderstandingSentence(input, call) : '',
+  ].filter(Boolean);
 
-  // 칭찬 중심: 강점 -> 집중도 -> (상승이면 방향) -> 마무리
+  const weaknesses = [
+    ...koreanNotes(input.koreanTags, 'weakness'),
+    ...mathCauseSentence(input, v),
+    input.mathUnderstanding === '하' ? mathUnderstandingSentence(input, call) : '',
+  ].filter(Boolean);
+
+  const neutralMath =
+    input.mathUnderstanding === '중' ? mathUnderstandingSentence(input, call) : '';
+  const area = areaPrescription(input.koreanAreas, v);
+  const direction = directionSentence(trend, v);
+
+  const fallbackStrength = `${josa(call, '은는')} 수업 태도가 성실해 기본기가 잘 잡혀 가고 있습니다.`;
+  const fallbackImprove = '이번 주 틀린 문제를 다시 풀어 보며 약한 부분을 확인하겠습니다.';
+
   const praise = join([
     hello,
-    strengths.length > 0 ? strengths.join(' ') : fallbackStrength,
-    focusSentence(input.attendanceFocus),
-    trend === 'rise' ? direction : '',
-    homeworkSentence(input.homeworkRate, 'praise'),
-    CLOSING_PRAISE,
+    scoreLine,
+    strengths.length > 0 ? strengths.slice(0, 3).join(' ') : fallbackStrength,
+    neutralMath,
+    trend === 'rise' && direction,
+    focusSentence(input.attendanceFocus, v),
+    homeworkSentence(input.homeworkRate, 'praise', v),
+    pick(CLOSINGS.praise, v),
   ]);
 
-  // 약점 보완 중심: 처방 -> (하락이면 방향) -> 숙제 -> 마무리
   const improve = join([
     hello,
-    improvements.length > 0 ? improvements.join(' ') : fallbackImprove,
-    trend === 'drop' ? direction : '',
-    homeworkSentence(input.homeworkRate, 'improve'),
-    CLOSING_IMPROVE,
+    scoreLine,
+    weaknesses.length > 0 ? weaknesses.slice(0, 3).join(' ') : fallbackImprove,
+    neutralMath,
+    area,
+    trend === 'drop' && direction,
+    homeworkSentence(input.homeworkRate, 'improve', v),
+    pick(CLOSINGS.improve, v),
   ]);
 
-  // 균형형: 강점 1 + 처방 1 + 방향 + 숙제/집중도 요약 -> 마무리
   const balanced = join([
     hello,
-    strengths.length > 0 ? strengths[0] : fallbackStrength,
-    improvements.length > 0 ? improvements[0] : fallbackImprove,
-    direction,
-    focusSentence(input.attendanceFocus),
-    homeworkSentence(input.homeworkRate, 'improve'),
-    CLOSING_BALANCED,
+    scoreLine,
+    strengths[0] ?? fallbackStrength,
+    weaknesses.length > 0 ? weaknesses.slice(0, 2).join(' ') : neutralMath || fallbackImprove,
+    trend !== 'hold' && direction,
+    homeworkSentence(input.homeworkRate, 'improve', v),
+    pick(CLOSINGS.balanced, v),
   ]);
 
   return { praise, improve, balanced };

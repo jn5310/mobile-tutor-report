@@ -2,97 +2,135 @@
 // 카카오톡 텍스트 복사, 리포트 카드 PNG 변환, Web Share API 공유, PNG 다운로드를 담당합니다.
 
 import { toBlob } from 'html-to-image'
-import { Report, Student } from '../types'
+import { AppData, Report, ScoreSubject, Student } from '../types'
+import { getLast8Scores } from './storage'
+import { KOREAN_TAG_NOTES, KoreanTag } from '../data/feedbackTemplates'
 
-/** ISO 날짜를 'YYYY.MM.DD' 로 표시합니다. */
-function dotDate(iso: string): string {
-  const parts = iso.split('-')
-  if (parts.length === 3) {
-    return `${parts[0]}.${parts[1]}.${parts[2]}`
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** '10월 30일(금)' */
+function shortKoreanDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) {
+    return iso;
   }
-  return iso
+  return `${d.getMonth() + 1}월 ${d.getDate()}일(${WEEKDAYS[d.getDay()]})`;
+}
+
+function previousScore(
+  data: AppData | undefined,
+  report: Report,
+  subject: ScoreSubject,
+): number | undefined {
+  if (!data) {
+    return undefined;
+  }
+  const hist = getLast8Scores(
+    { ...data, reports: data.reports.filter((r) => r.id !== report.id) },
+    report.studentId,
+    subject,
+  ).filter((s) => s.date < report.date);
+  return hist.length > 0 ? hist[hist.length - 1].score : undefined;
 }
 
 /**
- * 학생/리포트 정보를 이모지와 말머리가 깔끔하게 정리된 카카오톡 메시지 텍스트로 변환합니다.
+ * 리포트를 카카오톡 메시지용 텍스트로 바꿉니다.
+ * 말머리마다 이모지 하나만 붙여 깔끔하게 정리하고, 마지막에 선생님 서명을 붙입니다.
+ * data 를 넘기면 직전 점수 대비 변화와 선생님 이름까지 함께 적습니다.
  */
-export function toKakaoText(report: Report, student: Student): string {
-  const lines: string[] = []
-  const showKorean = student.subjects === '국어' || student.subjects === '국수'
-  const showMath = student.subjects === '수학' || student.subjects === '국수'
+export function toKakaoText(report: Report, student: Student, data?: AppData): string {
+  const lines: string[] = [];
+  const showKorean = student.subjects === '국어' || student.subjects === '국수';
+  const showMath = student.subjects === '수학' || student.subjects === '국수';
+  const subjectLabel = student.subjects === '국수' ? '국어·수학' : student.subjects;
+  const blank = () => lines.push('');
 
-  lines.push(`📘 ${student.name} 학생 주간 학습 리포트`)
-  lines.push(`🗓️ ${dotDate(report.date)}`)
-  lines.push('')
+  lines.push(`[주간 학습 리포트] ${student.name} (${student.grade} ${subjectLabel})`);
+  lines.push(`${shortKoreanDate(report.date)} 수업`);
+  blank();
 
-  // 학생 정보
-  lines.push('👤 학생 정보')
-  lines.push(`• 학년: ${student.grade}`)
-  lines.push(`• 과목: ${student.subjects}`)
-  const target = [student.targetUniversity, student.targetGrade]
-    .filter((v) => v && v.trim())
-    .join(' · ')
-  if (target) {
-    lines.push(`• 목표: ${target}`)
-  }
-  lines.push('')
-
-  // 테스트 점수
   if (report.testScores.length > 0) {
-    lines.push('📈 이번 회차 테스트 점수')
+    lines.push('📌 테스트');
     for (const ts of report.testScores) {
-      lines.push(`• ${ts.subject}: ${ts.score}점`)
+      const prev = previousScore(data, report, ts.subject);
+      let tail = '';
+      if (typeof prev === 'number') {
+        const diff = ts.score - prev;
+        tail = diff === 0 ? ` (지난번과 같음)` : ` (지난번 ${prev}점, ${diff > 0 ? '+' : ''}${diff})`;
+      }
+      lines.push(`${ts.subject} ${ts.score}점${tail}`);
     }
-    lines.push('')
+    blank();
   }
 
-  // 국어 분석
+  lines.push('📝 숙제·수업 태도');
+  lines.push(
+    `숙제 ${report.homeworkRate}% · 태도 ${'★'.repeat(report.attendanceFocus)}${'☆'.repeat(Math.max(0, 5 - report.attendanceFocus))}`,
+  );
+  blank();
+
   if (showKorean && (report.koreanAreas.length > 0 || report.koreanTags.length > 0)) {
-    lines.push('📖 국어 영역 분석')
+    lines.push('📖 국어');
     if (report.koreanAreas.length > 0) {
-      lines.push(`• 수업 영역: ${report.koreanAreas.join(', ')}`)
+      lines.push(`영역: ${report.koreanAreas.join(', ')}`);
     }
-    if (report.koreanTags.length > 0) {
-      lines.push(`• 강점·약점: ${report.koreanTags.join(', ')}`)
+    for (const tag of report.koreanTags) {
+      const weak = KOREAN_TAG_NOTES[tag as KoreanTag]?.kind === 'weakness';
+      lines.push(`${weak ? '△' : '○'} ${tag}`);
     }
-    lines.push('')
+    blank();
   }
 
-  // 수학 분석
-  if (
-    showMath &&
-    (report.mathUnit.trim() || report.mathErrorCauses.length > 0)
-  ) {
-    lines.push('✏️ 수학 오답 원인 분석')
+  if (showMath && (report.mathUnit.trim() || report.mathErrorCauses.length > 0)) {
+    lines.push('✏️ 수학');
     if (report.mathUnit.trim()) {
-      lines.push(`• 단원: ${report.mathUnit.trim()} (이해도 ${report.mathUnderstanding})`)
+      lines.push(`진도: ${report.mathUnit.trim()} (이해도 ${report.mathUnderstanding})`);
     }
     if (report.mathErrorCauses.length > 0) {
-      lines.push(`• 오답 원인: ${report.mathErrorCauses.join(', ')}`)
+      const counts: Record<string, number> = { ...(report.mathErrorCounts ?? {}) };
+      for (const c of report.mathErrorCauses) {
+        if (!counts[c]) {
+          counts[c] = 1;
+        }
+      }
+      const rows = report.mathErrorCauses
+        .map((c) => ({ c, n: counts[c] }))
+        .sort((x, y) => y.n - x.n);
+      const total = rows.reduce((sum, r) => sum + r.n, 0);
+      lines.push(
+        `오답 원인: ${rows.map((r) => `${r.c} ${Math.round((r.n / total) * 100)}%`).join(', ')}`,
+      );
     }
-    lines.push('')
+    blank();
   }
 
-  // 총평
   if (report.overallComment.trim()) {
-    lines.push('💬 선생님 총평')
-    lines.push(report.overallComment.trim())
-    lines.push('')
+    lines.push('💬 선생님 총평');
+    lines.push(report.overallComment.trim());
+    blank();
   }
 
-  // 다음 과제
-  if (report.nextAssignment.trim()) {
-    lines.push('📌 다음 시간 과제')
-    lines.push(report.nextAssignment.trim())
-    lines.push('')
+  const tasks = report.nextAssignment
+    .split(/\n|,(?![^()]*\))/)
+    .map((t) => t.replace(/^[-·•\s]+/, '').trim())
+    .filter(Boolean);
+  if (tasks.length > 0) {
+    lines.push('✅ 다음 시간까지');
+    for (const t of tasks) {
+      lines.push(`- ${t}`);
+    }
+    blank();
   }
 
-  // 마무리 (끝 공백 줄 정리)
+  const teacher = data?.settings?.teacherName?.trim();
+  if (teacher) {
+    lines.push(`${teacher} 선생님 드림`);
+  }
+
   while (lines.length > 0 && lines[lines.length - 1] === '') {
-    lines.pop()
+    lines.pop();
   }
-
-  return lines.join('\n')
+  return lines.join('\n');
 }
 
 /**
@@ -136,11 +174,18 @@ export async function copyToClipboard(text: string): Promise<void> {
  * 선명한 공유 이미지를 위해 pixelRatio 를 높입니다.
  */
 export async function exportCardToPng(node: HTMLElement): Promise<Blob> {
-  const blob = await toBlob(node, {
+  const options = {
     pixelRatio: 3,
     cacheBust: true,
     backgroundColor: '#ffffff',
-  })
+  }
+  // iOS 사파리는 첫 변환에서 글꼴/SVG 가 빠지는 경우가 있어 한 번 미리 그려 둡니다.
+  try {
+    await toBlob(node, { ...options, pixelRatio: 1 })
+  } catch {
+    // 미리 그리기 실패는 무시하고 본 변환을 시도합니다.
+  }
+  const blob = await toBlob(node, options)
   if (!blob) {
     throw new Error('이미지를 생성하지 못했습니다. 다시 시도해 주세요.')
   }
@@ -172,7 +217,6 @@ export async function shareCardImage(blob: Blob, filename: string): Promise<void
     await navigator.share({
       files: [file],
       title: '학습 리포트',
-      text: '학습 리포트를 보내드립니다.',
     })
   } catch (err) {
     // 사용자가 공유창을 닫은 경우는 오류가 아니므로 조용히 넘어갑니다.

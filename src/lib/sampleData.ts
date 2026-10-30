@@ -103,7 +103,8 @@ export function generateSampleData(): AppData {
       koreanTags: [],
       mathUnit: '수열의 극한',
       mathUnderstanding: '중',
-      mathErrorCauses: ['계산 실수', '풀이 과정 생략'],
+      mathErrorCauses: ['계산 실수', '풀이 과정 생략', '문제 조건 해석 오류'],
+      mathErrorCounts: { '계산 실수': 3, '풀이 과정 생략': 2, '문제 조건 해석 오류': 1 },
       testScores: [{ subject: '수학', score: 72 }],
       overallComment:
         '안녕하세요, 학부모님. 준호는 수열의 극한 개념을 잘 이해하고 있으나, 계산 과정에서 사소한 실수가 반복되고 있습니다. 풀이 과정을 끝까지 적는 습관을 들이면 점수가 더욱 안정될 것입니다. 꾸준히 지도하겠습니다.',
@@ -125,6 +126,7 @@ export function generateSampleData(): AppData {
       mathUnit: '이차함수',
       mathUnderstanding: '상',
       mathErrorCauses: ['문제 조건 해석 오류'],
+      mathErrorCounts: { '문제 조건 해석 오류': 2 },
       testScores: [
         { subject: '국어', score: 92 },
         { subject: '수학', score: 85 },
@@ -151,6 +153,19 @@ export function generateSampleData(): AppData {
     buildScoreOnlyReport('rep_sample_b_h4', studentB.id, daysAgo(13), '수학', 70),
   ];
 
+  // 국수 학생은 같은 날 두 과목 점수를 한 리포트에 함께 기록합니다.
+  const historyC: Report[] = (
+    [
+      [26, 84, 79],
+      [19, 88, 77],
+      [12, 86, 82],
+    ] as const
+  ).map(([ago, kor, math], i) => {
+    const r = buildScoreOnlyReport(`rep_sample_c_h${i + 1}`, studentC.id, daysAgo(ago), '국어', kor);
+    r.testScores.push({ subject: '수학', score: math });
+    return r;
+  });
+
   return {
     students: [studentA, studentB, studentC],
     reports: [
@@ -158,6 +173,7 @@ export function generateSampleData(): AppData {
       ...reportsA,
       ...historyB,
       ...reportsB,
+      ...historyC,
       ...reportsC,
     ],
     version: DATA_VERSION,

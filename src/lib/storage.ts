@@ -8,6 +8,7 @@ import {
   MAX_SCORES_PER_SUBJECT,
   Report,
   ScoreSubject,
+  Settings,
   Student,
   TestScore,
   createEmptyAppData,
@@ -41,7 +42,13 @@ export function normalizeAppData(value: unknown): AppData {
   const students = Array.isArray(data.students) ? (data.students as Student[]) : [];
   const reports = Array.isArray(data.reports) ? (data.reports as Report[]) : [];
   const version = typeof data.version === 'number' ? data.version : DATA_VERSION;
-  return { students, reports, version };
+  const raw = (data.settings ?? {}) as Partial<Settings>;
+  const settings: Settings = {
+    teacherName: typeof raw.teacherName === 'string' ? raw.teacherName : '',
+    academyName: typeof raw.academyName === 'string' ? raw.academyName : '',
+    ...(typeof raw.lastBackupAt === 'string' ? { lastBackupAt: raw.lastBackupAt } : {}),
+  };
+  return { students, reports, settings, version };
 }
 
 /** 저장된 데이터를 불러옵니다. 없거나 손상된 경우 빈 데이터를 반환합니다. */
@@ -173,6 +180,20 @@ export function addReport(
   return next;
 }
 
+/** 기존 리포트 내용을 고칩니다 (id, 작성 시각은 유지). */
+export function updateReport(
+  data: AppData,
+  reportId: string,
+  patch: Partial<Omit<Report, 'id' | 'createdAt'>>,
+): AppData {
+  const reports = data.reports.map((r) =>
+    r.id === reportId ? { ...r, ...patch, id: r.id, createdAt: r.createdAt } : r,
+  );
+  const next: AppData = { ...data, reports };
+  saveData(next);
+  return next;
+}
+
 /** 리포트를 삭제합니다. */
 export function deleteReport(data: AppData, reportId: string): AppData {
   const next: AppData = {
@@ -241,4 +262,35 @@ function isLaterReportIn(
     return a > b;
   }
   return reports.indexOf(candidate) > reports.indexOf(current);
+}
+
+// ---------------------------------------------------------------------------
+// 설정
+// ---------------------------------------------------------------------------
+
+/** 선생님 정보/설정을 고칩니다. */
+export function updateSettings(data: AppData, patch: Partial<Settings>): AppData {
+  const current = data.settings ?? { teacherName: '', academyName: '' };
+  const next: AppData = { ...data, settings: { ...current, ...patch } };
+  saveData(next);
+  return next;
+}
+
+/**
+ * 브라우저에 "이 사이트 저장소는 지우지 말아 달라"고 요청합니다.
+ * 사파리/크롬이 공간이 부족할 때 LocalStorage 를 정리하는 일을 줄여 줍니다.
+ * 지원하지 않는 브라우저에서는 아무 일도 하지 않습니다.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage?.persist) {
+      return false;
+    }
+    if (await navigator.storage.persisted()) {
+      return true;
+    }
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
 }

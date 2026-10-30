@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 
-const BRAND = [79, 70, 229] // #4f46e5
-const WHITE = [255, 255, 255]
+const BRAND = [31, 77, 63] // #1f4d3f 칠판색
+const WHITE = [244, 241, 234] // #f4f1ea 종이색
 
 function crc32(buf) {
   let c = ~0
@@ -67,19 +67,22 @@ function makePng(size, draw) {
   ])
 }
 
-// 책 모양 글리프를 가진 아이콘을 그립니다. maskable 은 여백을 더 둡니다.
-function iconDrawer(maskable) {
+// 책 모양 글리프를 가진 아이콘을 그립니다.
+// maskable 은 여백을 더 두고, fullBleed 는 모서리를 투명하게 비우지 않습니다
+// (iOS 와 안드로이드 런처가 직접 모서리를 둥글게 자르기 때문).
+function iconDrawer(maskable, fullBleed = maskable) {
   return (x, y, size) => {
     const pad = maskable ? size * 0.14 : 0
     // 둥근 사각형 배경
     const radius = size * 0.22
     const inset = maskable ? 0 : 0
     const inField =
-      x >= inset &&
+      fullBleed ||
+      (x >= inset &&
       y >= inset &&
       x < size - inset &&
       y < size - inset &&
-      insideRoundRect(x, y, inset, inset, size - inset, size - inset, radius)
+      insideRoundRect(x, y, inset, inset, size - inset, size - inset, radius))
 
     // 책/리포트 글리프 영역 (가운데)
     const gx0 = pad + size * 0.26
@@ -137,4 +140,4 @@ function save(rel, buf) {
 save('public/icons/icon-192.png', makePng(192, iconDrawer(false)))
 save('public/icons/icon-512.png', makePng(512, iconDrawer(false)))
 save('public/icons/icon-maskable-512.png', makePng(512, iconDrawer(true)))
-save('public/apple-touch-icon.png', makePng(180, iconDrawer(false)))
+save('public/apple-touch-icon.png', makePng(180, iconDrawer(false, true)))
