@@ -24,3 +24,44 @@
     @apply mx-auto min-h-screen w-full max-w-md bg-white;
   }
 }
+
+@layer utilities {
+  /* 하단 탭바의 안전 영역(노치/홈 인디케이터) 패딩 */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* 숙제 이행률 슬라이더: 큼직한 터치 썸 (최소 44px 터치 영역) */
+.mtr-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 10px;
+  border-radius: 9999px;
+  background: #e2e8f0;
+  outline: none;
+}
+.mtr-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: #4f46e5;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.3);
+  cursor: pointer;
+}
+.mtr-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: #4f46e5;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.3);
+  cursor: pointer;
+}
