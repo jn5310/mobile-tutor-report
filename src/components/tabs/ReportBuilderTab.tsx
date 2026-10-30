@@ -7,11 +7,13 @@ import { useMemo, useState } from 'react'
 import { Save, Sparkles, Wand2 } from 'lucide-react'
 import {
   MathUnderstanding,
+  Report,
   ReportTestScore,
   ScoreSubject,
   Student,
 } from '../../types'
 import { addReport, getLast8Scores } from '../../lib/storage'
+import ReportPreview from '../report/ReportPreview'
 import {
   ComposedComment,
   KOREAN_AREAS,
@@ -112,6 +114,9 @@ function ReportBuilderTab({ data, setData }: TabProps) {
   // 다음 과제
   const [nextAssignment, setNextAssignment] = useState<string>('')
 
+  // 저장 직후 미리보기용 상태
+  const [previewReport, setPreviewReport] = useState<Report | null>(null)
+
   const showKorean = student?.subjects === '국어' || student?.subjects === '국수'
   const showMath = student?.subjects === '수학' || student?.subjects === '국수'
 
@@ -179,25 +184,42 @@ function ReportBuilderTab({ data, setData }: TabProps) {
       .filter((subj) => scores[subj] > 0)
       .map((subj) => ({ subject: subj, score: scores[subj] }))
 
-    setData(
-      addReport(data, {
-        studentId: student.id,
-        date,
-        attendanceFocus: focus,
-        homeworkRate,
-        koreanAreas: showKorean ? koreanAreas : [],
-        koreanTags: showKorean ? koreanTags : [],
-        mathUnit: showMath ? mathUnit.trim() : '',
-        mathUnderstanding,
-        mathErrorCauses: showMath ? mathErrorCauses : [],
-        testScores,
-        overallComment: overallComment.trim(),
-        nextAssignment: nextAssignment.trim(),
-      }),
-    )
-    window.alert(`${student.name} 학생의 리포트를 저장했습니다.`)
+    const nextData = addReport(data, {
+      studentId: student.id,
+      date,
+      attendanceFocus: focus,
+      homeworkRate,
+      koreanAreas: showKorean ? koreanAreas : [],
+      koreanTags: showKorean ? koreanTags : [],
+      mathUnit: showMath ? mathUnit.trim() : '',
+      mathUnderstanding,
+      mathErrorCauses: showMath ? mathErrorCauses : [],
+      testScores,
+      overallComment: overallComment.trim(),
+      nextAssignment: nextAssignment.trim(),
+    })
+    setData(nextData)
+
+    // 방금 추가된 리포트(배열 마지막)를 미리보기로 열지 사용자에게 묻습니다.
+    const savedReport = nextData.reports[nextData.reports.length - 1] ?? null
     resetForm()
+    if (
+      savedReport &&
+      window.confirm(
+        `${student.name} 학생의 리포트를 저장했습니다. 미리보기를 열어 공유하시겠습니까?`,
+      )
+    ) {
+      setPreviewReport(savedReport)
+    }
   }
+
+  const previewStudent = useMemo(
+    () =>
+      previewReport
+        ? data.students.find((s) => s.id === previewReport.studentId) ?? null
+        : null,
+    [previewReport, data.students],
+  )
 
   if (data.students.length === 0) {
     return (
@@ -469,6 +491,15 @@ function ReportBuilderTab({ data, setData }: TabProps) {
             리포트 저장
           </Button>
         </div>
+      )}
+
+      {previewReport && previewStudent && (
+        <ReportPreview
+          data={data}
+          report={previewReport}
+          student={previewStudent}
+          onClose={() => setPreviewReport(null)}
+        />
       )}
     </section>
   )
