@@ -90,6 +90,14 @@ function ReportBuilderTab({ data, setData }: TabProps) {
     국어: 0,
     수학: 0,
   })
+  // 과목별로 "점수를 기록함" 여부. 기본은 미기록이라 0점이 강제 저장되지 않습니다.
+  // 토글을 켜야 스텝퍼가 보이고, 그때는 0점을 포함해 입력값이 저장됩니다.
+  const [scoreEntered, setScoreEntered] = useState<Record<ScoreSubject, boolean>>(
+    {
+      국어: false,
+      수학: false,
+    },
+  )
 
   // 국어 입력 상태
   const [koreanAreas, setKoreanAreas] = useState<string[]>([])
@@ -143,7 +151,8 @@ function ReportBuilderTab({ data, setData }: TabProps) {
       mathErrorCauses,
       mathUnderstanding: showMath ? mathUnderstanding : undefined,
       homeworkRate,
-      latestScore: scores[primary] || undefined,
+      // 기록하기로 선택한 과목만 최신 점수로 전달합니다 (0점 포함).
+      latestScore: scoreEntered[primary] ? scores[primary] : undefined,
       previousScore,
       attendanceFocus: focus,
     })
@@ -165,6 +174,7 @@ function ReportBuilderTab({ data, setData }: TabProps) {
     setFocus(3)
     setHomeworkRate(75)
     setScores({ 국어: 0, 수학: 0 })
+    setScoreEntered({ 국어: false, 수학: false })
     setKoreanAreas([])
     setKoreanTags([])
     setMathUnit('')
@@ -180,8 +190,9 @@ function ReportBuilderTab({ data, setData }: TabProps) {
     if (!student) {
       return
     }
+    // 기록하기로 선택한 과목만 저장합니다. 선택된 과목은 0점이어도 그대로 저장됩니다.
     const testScores: ReportTestScore[] = scoreSubjects
-      .filter((subj) => scores[subj] > 0)
+      .filter((subj) => scoreEntered[subj])
       .map((subj) => ({ subject: subj, score: scores[subj] }))
 
     const nextData = addReport(data, {
@@ -302,20 +313,35 @@ function ReportBuilderTab({ data, setData }: TabProps) {
               <span className="mb-1.5 block text-sm font-semibold text-slate-700">
                 오늘 테스트 점수
               </span>
+              <p className="mb-2 text-xs text-slate-400">
+                점수를 본 과목만 "점수 기록"을 켜 주세요. 켜면 0점도 저장됩니다.
+              </p>
               <div className="flex flex-col gap-3">
                 {scoreSubjects.map((subj) => (
-                  <div key={subj} className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-600">
-                      {subj}
-                    </span>
-                    <Stepper
-                      value={scores[subj]}
-                      onChange={(v) => setScores({ ...scores, [subj]: v })}
-                      min={0}
-                      max={100}
-                      step={1}
-                      suffix="점"
+                  <div
+                    key={subj}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <Chip
+                      label={`${subj} 점수 기록`}
+                      selected={scoreEntered[subj]}
+                      onClick={() =>
+                        setScoreEntered({
+                          ...scoreEntered,
+                          [subj]: !scoreEntered[subj],
+                        })
+                      }
                     />
+                    {scoreEntered[subj] && (
+                      <Stepper
+                        value={scores[subj]}
+                        onChange={(v) => setScores({ ...scores, [subj]: v })}
+                        min={0}
+                        max={100}
+                        step={1}
+                        suffix="점"
+                      />
+                    )}
                   </div>
                 ))}
               </div>

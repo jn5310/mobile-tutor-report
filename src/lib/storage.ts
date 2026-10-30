@@ -194,23 +194,51 @@ export function getReportsByStudent(data: AppData, studentId: string): Report[] 
 /**
  * 학생/과목별 최근 8회차 테스트 점수를 날짜 오름차순으로 반환합니다.
  * 각 리포트의 date 와 testScores 를 조합하여 생성합니다.
+ * 같은 날짜에 같은 과목 점수가 여러 번 있으면 가장 나중에 작성된 리포트의
+ * 점수 하나만 남겨 중복 집계를 방지합니다.
  */
 export function getLast8Scores(
   data: AppData,
   studentId: string,
   subject: ScoreSubject,
 ): TestScore[] {
-  const scores: TestScore[] = [];
+  // 날짜별로 (점수, 해당 리포트)를 모아 같은 날짜는 최신 리포트 점수만 유지합니다.
+  const latestByDate = new Map<string, { score: number; report: Report }>();
   for (const report of data.reports) {
     if (report.studentId !== studentId) {
       continue;
     }
     for (const ts of report.testScores) {
-      if (ts.subject === subject) {
-        scores.push({ date: report.date, subject, score: ts.score });
+      if (ts.subject !== subject) {
+        continue;
+      }
+      const existing = latestByDate.get(report.date);
+      if (!existing || isLaterReportIn(data.reports, report, existing.report)) {
+        latestByDate.set(report.date, { score: ts.score, report });
       }
     }
   }
+
+  const scores: TestScore[] = Array.from(latestByDate.entries()).map(
+    ([date, entry]) => ({ date, subject, score: entry.score }),
+  );
   scores.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return scores.slice(-MAX_SCORES_PER_SUBJECT);
+}
+
+/**
+ * 두 리포트 중 candidate 가 current 보다 나중에 작성된 것인지 판정합니다.
+ * createdAt 을 우선 비교하고, 같거나 없으면 배열 순서(뒤쪽을 최신)로 판정합니다.
+ */
+function isLaterReportIn(
+  reports: Report[],
+  candidate: Report,
+  current: Report,
+): boolean {
+  const a = candidate.createdAt ?? '';
+  const b = current.createdAt ?? '';
+  if (a !== b) {
+    return a > b;
+  }
+  return reports.indexOf(candidate) > reports.indexOf(current);
 }
